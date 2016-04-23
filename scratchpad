@@ -1,0 +1,4 @@
+generate a heap dump for PID 1767:
+
+jmap -dump:live,format=b,file=java_pid1767.hprof 1767
+
