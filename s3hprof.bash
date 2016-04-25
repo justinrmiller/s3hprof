@@ -1,6 +1,6 @@
 #!/bin/bash
 
-S3_BUCKET=<insert-bucket-name-here>
+S3_BUCKET=<insert bucket here>
 HPROF_S3_FOLDER=hprofs
 HPROF_LOCAL_DIR=/tmp
 
@@ -8,15 +8,10 @@ COMMAND=$1
 
 # consider looking at sse-c as well (also aws:kms)
 SERVER_SIDE_ENCRYPTION_AWS_CLI="--sse AES256"
-SERVER_SIDE_ENCRYPTION_S3_CMD="--server-side-encryption"
 
-# s3 client backend selection
-#BACKEND="s3cmd"       # still experimental but should work
-BACKEND="awscli"
-
-# hi there, currently supported commands include (all work for both awscli and s3cmd):
+# hi there, currently supported commands include:
 #
-# NOTE: this assumes that you have properly configured credentials for your backend (awscli or s3cmd)
+# NOTE: this assumes that you have properly configured credentials for awscli
 # and that you have access to the bucket specified in S3_BUCKET
 #
 # ./s3hprof.bash list <hostname> - This lists all hprofs that s3hprof can retrieve for you
@@ -33,11 +28,7 @@ if [ "$COMMAND" == "list" ] && [ "$#" -eq 2 ]; then
   host=$2
   echo "Listing available hprofs for $host:"
   echo ""
-  if [ "$BACKEND" == "awscli" ]; then
-    aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/ | grep hprof
-  elif [ "$BACKEND" == "s3cmd" ]; then
-    s3cmd ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/ | grep hprof | grep -v " 0 "
-  fi
+  aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/ | grep hprof
   echo ""
 elif [ "$COMMAND" == "list" ]; then
   echo "Usage: s3hprof.bash list server-001"
@@ -47,14 +38,10 @@ fi
 if [ "$COMMAND" == "get" ] && [ "$#" -eq 3 ]; then
   host=$2
   filename=$3
-  echo "Getting hprof for host $host and file $filename:"
-  if [ "$BACKEND" == "awscli" ]; then
-    aws s3 cp s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/$filename .
-  elif [ "$BACKEND" == "s3cmd" ]; then
-    s3cmd get s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/$filename .
-  fi
+  echo "Getting hprof for host $host and timestamp/file $filename:"
+  aws s3 cp s3://$S3_BUCKET/$HPROF_S3_FOLDER/$host/$filename .
 elif [ "$COMMAND" == "get" ]; then
-  echo "Usage: s3hprof.bash get server-001 java_pidXXXX.hprof"
+  echo "Usage: s3hprof.bash get server-001 timestamp/java_pidXXXX.hprof"
 fi
 
 # handle uploading hprofs if their PIDs no longer exist, will upload then delete the hprof
@@ -69,11 +56,8 @@ if [ "$COMMAND" == "check-then-upload" ] && [ "$#" -eq 1 ]; then
       echo "$PID is running, skipping in an attempt to get the full hprof next time"
     else
       echo "$PID is not running, harvesting hprof..."
-      if [ "$BACKEND" == "awscli" ]; then
-        aws s3 cp $HPROF_LOCAL_DIR/java_pid$PID.hprof s3://$S3_BUCKET/$HPROF_S3_FOLDER/$HOSTNAME/java_pid$PID.hprof $SERVER_SIDE_ENCRYPTION_AWS_CLI
-      elif [ "$BACKEND" == "s3cmd" ]; then
-        s3cmd put $HPROF_LOCAL_DIR/java_pid$PID.hprof s3://$S3_BUCKET/$HPROF_S3_FOLDER/$HOSTNAME/java_pid$PID.hprof $SERVER_SIDE_ENCRYPTION_S3_CMD
-      fi
+      timestamp=$(date +%s)
+      aws s3 cp $HPROF_LOCAL_DIR/java_pid$PID.hprof s3://$S3_BUCKET/$HPROF_S3_FOLDER/$HOSTNAME/$timestamp/java_pid$PID.hprof $SERVER_SIDE_ENCRYPTION_AWS_CLI
       echo "Cleaning up java_pid$PID.hprof"
       # do this when we've tested things a bit more
     fi
@@ -87,11 +71,7 @@ if [ "$COMMAND" == "all-hprofs" ] && [ "$#" -eq 1 ]; then
   # maybe pretty print this later?
   echo "Displaying all available hprofs:"
   echo ""
-  if [ "$BACKEND" == "awscli" ]; then
-    aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " | awk '{print $1,$2,$3,$4}'
-  elif [ "$BACKEND" == "s3cmd" ]; then
-    s3cmd ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " | awk '{print $1,$2,$3,$4}'
-  fi
+  aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " | awk '{print $1,$2,$3,$4}'
   echo ""
 elif [ "$COMMAND" == "all-hprofs" ]; then
   echo "Usage: s3hprof.bash all-hprofs"
@@ -104,13 +84,8 @@ if [ "$COMMAND" == "all-hprofs-html" ] && [ "$#" -eq 1 ]; then
   echo "<table border=1 style=\"width:100%\">"
   echo "<tr><th>Date</th><th>Time</th><th>Bytes</th><th>Location</th></tr>"
   #echo "<tr class=\"blank_row\"><td colspan="4"></td></tr>"
-  if [ "$BACKEND" == "awscli" ]; then
-    aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " \
+  aws s3 ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " \
       | awk -F' ' '{print "<tr> <td> " $1 " </td> <td> " $2 " </td> <td> " $3 " </td> <td> " $4 "</td></tr>"}'
-  elif [ "$BACKEND" == "s3cmd" ]; then
-    s3cmd ls s3://$S3_BUCKET/$HPROF_S3_FOLDER/ --recursive | grep -v " 0 " \
-      | awk -F' ' '{print "<tr> <td> " $1 " </td> <td> " $2 " </td> <td> " $3 " </td> <td> " $4 "</td></tr>"}'
-  fi
   echo "</table>"
 elif [ "$COMMAND" == "all-hprofs-html" ]; then
   echo "Usage: s3hprof.bash all-hprofs-html"
