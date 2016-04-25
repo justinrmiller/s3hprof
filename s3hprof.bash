@@ -58,7 +58,7 @@ if [ "$COMMAND" == "check-then-upload" ] && [ "$#" -eq 1 ]; then
   declare -a files_to_upload
   i=0
   cd $LOCAL_DIR
-  IFS=$'\n'; for f in $( find . -maxdepth 1 -type f -mmin +0 -regex "./${REGEX}" -print )
+  IFS=$'\n'; for f in $( find . -maxdepth 1 -type f -mmin +30 -regex "./${REGEX}" -print )
   do
     files_to_upload[$i]="$f"
     # Evaluates to false when i==0, thanks bash!
